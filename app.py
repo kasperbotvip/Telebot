@@ -8,80 +8,99 @@ bot = telebot.TeleBot(BOT_TOKEN)
 # أمر /start للترحيب
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "👋 أهلاً أسامة، البوت شغال! \nاستخدم /yt لتنزيل الصوت من يوتيوب 🎶 أو /dl لتنزيل من أي موقع سوشيال ميديا 📥")
+    bot.send_message(message.chat.id, "👋 أهلاً أسامة، أرسل أي رابط من يوتيوب أو السوشيال ميديا، وأنا أعطيك خيارات التحميل 🎶🎬ℹ️")
 
-# أمر /yt لتحميل الصوت من يوتيوب
-@bot.message_handler(commands=['yt'])
-def download_audio(message):
+# استقبال أي رابط
+@bot.message_handler(func=lambda message: message.text.startswith("http"))
+def ask_download_type(message):
+    url = message.text.strip()
     try:
-        url = message.text.split(maxsplit=1)[1]  # الرابط بعد الأمر
-    except IndexError:
-        bot.reply_to(message, "اكتب الأمر هكذا:\n/yt رابط_يوتيوب")
-        return
+        # جلب معلومات الفيديو بدون تحميل
+        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+            info = ydl.extract_info(url, download=False)
+        title = info.get("title", "غير معروف")
+        thumbnail = info.get("thumbnail", None)
 
-    bot.reply_to(message, "⏳ جاري التحميل من يوتيوب...")
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(
+            telebot.types.InlineKeyboardButton("🎶 حمل صوت", callback_data=f"audio|{url}"),
+            telebot.types.InlineKeyboardButton("🎬 حمل فيديو", callback_data=f"video|{url}"),
+            telebot.types.InlineKeyboardButton("ℹ️ معلومات", callback_data=f"info|{url}")
+        )
 
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': 'downloaded_audio.%(ext)s',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-            audio_file = filename.rsplit('.', 1)[0] + ".mp3"
-
-        with open(audio_file, "rb") as f:
-            bot.send_audio(message.chat.id, f)
-
-        os.remove(audio_file)
+        if thumbnail:
+            bot.send_photo(message.chat.id, thumbnail, caption=f"📌 العنوان: {title}", reply_markup=markup)
+        else:
+            bot.send_message(message.chat.id, f"📌 العنوان: {title}", reply_markup=markup)
 
     except Exception as e:
-        bot.reply_to(message, f"❌ صار خطأ: {e}")
+        bot.send_message(message.chat.id, f"❌ خطأ في جلب المعلومات: {e}")
 
-# أمر /dl لتحميل من أي موقع سوشيال ميديا (TikTok, Instagram, Facebook, Twitter...)
-@bot.message_handler(commands=['dl'])
-def download_social_media(message):
-    try:
-        url = message.text.split(maxsplit=1)[1]
-    except IndexError:
-        bot.reply_to(message, "اكتب الأمر هكذا:\n/dl رابط_الميديا")
-        return
+# التعامل مع الضغط على الأزرار
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+    action, url = call.data.split("|", 1)
+    bot.answer_callback_query(call.id)
 
-    bot.reply_to(message, "⏳ جاري التحميل من الرابط...")
+    if action == "audio":
+        bot.send_message(call.message.chat.id, "⏳ جاري التحميل كصوت...")
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': 'downloaded_audio.%(ext)s',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+        }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = ydl.prepare_filename(info)
+                audio_file = filename.rsplit('.', 1)[0] + ".mp3"
 
-    ydl_opts = {
-        'outtmpl': 'downloaded_media.%(ext)s',
-        'format': 'best',
-        'retries': 3,
-        'nocheckcertificate': True,
-    }
+            with open(audio_file, "rb") as f:
+                bot.send_audio(call.message.chat.id, f)
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
+            os.remove(audio_file)
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ خطأ: {e}")
 
-        # إرسال الملف حسب نوعه
-        with open(filename, "rb") as f:
-            if filename.endswith((".mp3", ".m4a")):
-                bot.send_audio(message.chat.id, f)
-            elif filename.endswith((".mp4", ".webm")):
-                bot.send_video(message.chat.id, f)
-            else:
-                bot.send_document(message.chat.id, f)
+    elif action == "video":
+        bot.send_message(call.message.chat.id, "⏳ جاري التحميل كفيديو...")
+        ydl_opts = {
+            'outtmpl': 'downloaded_video.%(ext)s',
+            'format': 'best',
+            'retries': 3,
+            'nocheckcertificate': True,
+        }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = ydl.prepare_filename(info)
 
-        os.remove(filename)
+            with open(filename, "rb") as f:
+                bot.send_video(call.message.chat.id, f)
 
-    except Exception as e:
-        bot.reply_to(message, f"❌ فشل التحميل: {e}")
+            os.remove(filename)
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ خطأ: {e}")
+
+    elif action == "info":
+        bot.send_message(call.message.chat.id, "🔍 جاري جلب المعلومات...")
+        try:
+            with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                info = ydl.extract_info(url, download=False)
+            title = info.get("title", "غير معروف")
+            duration = info.get("duration", 0)
+            filesize = info.get("filesize", 0)
+            bot.send_message(
+                call.message.chat.id,
+                f"ℹ️ معلومات الفيديو:\n\n📌 العنوان: {title}\n⏱️ المدة: {duration} ثانية\n💾 الحجم: {filesize/1024/1024:.2f} MB"
+            )
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ خطأ في جلب المعلومات: {e}")
 
 if __name__ == "__main__":
-    print("YouTube & Social Media Bot is running...")
+    print("Bot with audio/video/info choice + thumbnail is running...")
     bot.infinity_polling()
