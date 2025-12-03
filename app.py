@@ -12,7 +12,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 users = set()
 download_count = 0
 downloaded_links = []
-required_channels = ["@YourChannel"]  # القنوات المطلوبة للاشتراك
+required_channels = ["@day3_00"]  # القنوات المطلوبة للاشتراك
 
 # ✅ دالة تحميل من يوتيوب باستخدام yt-dlp
 def download_youtube(url, output="downloaded.mp4"):
