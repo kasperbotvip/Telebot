@@ -1,5 +1,6 @@
 import telebot
 from collections import Counter
+import yt_dlp
 import os
 
 # ✅ التوكن الخاص بالبوت
@@ -12,6 +13,18 @@ users = set()
 download_count = 0
 downloaded_links = []
 required_channels = ["@YourChannel"]  # القنوات المطلوبة للاشتراك
+
+# ✅ دالة تحميل من يوتيوب باستخدام yt-dlp
+def download_youtube(url, output="downloaded.mp4"):
+    ydl_opts = {
+        "outtmpl": output,
+        "format": "best",
+        # إذا عندك ملف cookies.txt مرفوع على السيرفر
+        "cookies": "cookies.txt" if os.path.exists("cookies.txt") else None
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+    return output
 
 # تحقق من الاشتراك
 def check_subscription(user_id):
@@ -90,12 +103,22 @@ def button_handler(call):
     else:
         if call.data == "audio":
             bot.send_message(call.message.chat.id, "⏳ جاري التحميل كصوت...")
-            download_count += 1
-            downloaded_links.append("رابط تجريبي صوت")
+            try:
+                file_path = download_youtube("https://www.youtube.com/watch?v=xSKtOXLoRhA", "audio.mp3")
+                bot.send_audio(call.message.chat.id, open(file_path, "rb"))
+                download_count += 1
+                downloaded_links.append("https://www.youtube.com/watch?v=xSKtOXLoRhA")
+            except Exception as e:
+                bot.send_message(call.message.chat.id, f"❌ خطأ في التحميل: {e}")
         elif call.data == "video":
             bot.send_message(call.message.chat.id, "⏳ جاري التحميل كفيديو...")
-            download_count += 1
-            downloaded_links.append("رابط تجريبي فيديو")
+            try:
+                file_path = download_youtube("https://www.youtube.com/watch?v=xSKtOXLoRhA", "video.mp4")
+                bot.send_video(call.message.chat.id, open(file_path, "rb"))
+                download_count += 1
+                downloaded_links.append("https://www.youtube.com/watch?v=xSKtOXLoRhA")
+            except Exception as e:
+                bot.send_message(call.message.chat.id, f"❌ خطأ في التحميل: {e}")
         elif call.data == "info":
             bot.send_message(call.message.chat.id, "ℹ️ معلومات الفيديو: العنوان - المدة - الحجم")
 
