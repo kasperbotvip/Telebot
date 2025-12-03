@@ -1,106 +1,135 @@
 import telebot
-import yt_dlp
+from collections import Counter
 import os
 
+# ✅ التوكن الخاص بالبوت
 BOT_TOKEN = "6188422479:AAEjeLAGKvXnPyrmA94VcPpuedvboKtZ5fE"
+ADMIN_ID = 988757303
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# أمر /start للترحيب
+# تخزين المستخدمين والتحميلات
+users = set()
+download_count = 0
+downloaded_links = []
+required_channels = ["@YourChannel"]  # القنوات المطلوبة للاشتراك
+
+# تحقق من الاشتراك
+def check_subscription(user_id):
+    for channel in required_channels:
+        try:
+            member = bot.get_chat_member(channel, user_id)
+            if member.status in ["member", "administrator", "creator"]:
+                continue
+            else:
+                return False
+        except:
+            return False
+    return True
+
+# أول رسالة عند دخول أي مستخدم
 @bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.send_message(message.chat.id, "👋 أهلاً أسامة، أرسل أي رابط من يوتيوب أو السوشيال ميديا، وأنا أعطيك خيارات التحميل 🎶🎬ℹ️")
+def welcome(message):
+    users.add(message.from_user.id)
+    if not check_subscription(message.from_user.id):
+        bot.send_message(message.chat.id, "⚠️ لازم تشترك بالقناة أولاً:\n" + "\n".join(required_channels))
+        return
 
-# استقبال أي رابط
-@bot.message_handler(func=lambda message: message.text.startswith("http"))
-def ask_download_type(message):
-    url = message.text.strip()
-    try:
-        # جلب معلومات الفيديو بدون تحميل
-        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-            info = ydl.extract_info(url, download=False)
-        title = info.get("title", "غير معروف")
-        thumbnail = info.get("thumbnail", None)
-
+    if message.from_user.id == ADMIN_ID:
+        # لوحة الأدمن تظهر مباشرة
         markup = telebot.types.InlineKeyboardMarkup()
-        markup.add(
-            telebot.types.InlineKeyboardButton("🎶 حمل صوت", callback_data=f"audio|{url}"),
-            telebot.types.InlineKeyboardButton("🎬 حمل فيديو", callback_data=f"video|{url}"),
-            telebot.types.InlineKeyboardButton("ℹ️ معلومات", callback_data=f"info|{url}")
-        )
+        markup.add(telebot.types.InlineKeyboardButton("➕ إضافة قناة", callback_data="add_channel"))
+        markup.add(telebot.types.InlineKeyboardButton("❌ حذف قناة", callback_data="del_channel"))
+        markup.add(telebot.types.InlineKeyboardButton("📋 عرض القنوات", callback_data="list_channels"))
+        markup.add(telebot.types.InlineKeyboardButton("📤 رسالة جماعية", callback_data="broadcast"))
+        markup.add(telebot.types.InlineKeyboardButton("📊 عرض الإحصائيات", callback_data="stats"))
+        markup.add(telebot.types.InlineKeyboardButton("🔄 تحديث الإحصائيات", callback_data="refresh_stats"))
+        bot.send_message(message.chat.id, "📋 لوحة الأدمن:", reply_markup=markup)
+    else:
+        # لوحة المستخدم العادي
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(telebot.types.InlineKeyboardButton("🎶 حمل صوت", callback_data="audio"))
+        markup.add(telebot.types.InlineKeyboardButton("🎬 حمل فيديو", callback_data="video"))
+        markup.add(telebot.types.InlineKeyboardButton("ℹ️ معلومات", callback_data="info"))
+        bot.send_message(message.chat.id, "👋 أهلاً بك! اختار العملية:", reply_markup=markup)
 
-        if thumbnail:
-            bot.send_photo(message.chat.id, thumbnail, caption=f"📌 العنوان: {title}", reply_markup=markup)
-        else:
-            bot.send_message(message.chat.id, f"📌 العنوان: {title}", reply_markup=markup)
-
-    except Exception as e:
-        bot.send_message(message.chat.id, f"❌ خطأ في جلب المعلومات: {e}")
-
-# التعامل مع الضغط على الأزرار
+# التعامل مع ضغط الأزرار
 @bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    action, url = call.data.split("|", 1)
-    bot.answer_callback_query(call.id)
+def button_handler(call):
+    global download_count, downloaded_links
 
-    if action == "audio":
-        bot.send_message(call.message.chat.id, "⏳ جاري التحميل كصوت...")
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': 'downloaded_audio.%(ext)s',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-        }
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                filename = ydl.prepare_filename(info)
-                audio_file = filename.rsplit('.', 1)[0] + ".mp3"
+    # أزرار الأدمن
+    if call.from_user.id == ADMIN_ID:
+        if call.data == "add_channel":
+            bot.send_message(call.message.chat.id, "✏️ أرسل اسم القناة لإضافتها (مثال: @YourChannel)")
+        elif call.data == "del_channel":
+            bot.send_message(call.message.chat.id, "✏️ أرسل اسم القناة لحذفها")
+        elif call.data == "list_channels":
+            bot.send_message(call.message.chat.id, "📋 القنوات المطلوبة:\n" + "\n".join(required_channels))
+        elif call.data == "broadcast":
+            bot.send_message(call.message.chat.id, "✏️ أرسل الرسالة الجماعية (نص/صورة/فيديو)")
+        elif call.data in ["stats", "refresh_stats"]:
+            top_links = Counter(downloaded_links).most_common(5)
+            table_header = "| الترتيب | الرابط | مرات التحميل |\n|---------|--------|---------------|\n"
+            table_rows = ""
+            if top_links:
+                for i, (link, count) in enumerate(top_links, start=1):
+                    table_rows += f"| {i} | {link} | {count} |\n"
+            else:
+                table_rows = "| - | لا توجد روابط | - |\n"
 
-            with open(audio_file, "rb") as f:
-                bot.send_audio(call.message.chat.id, f)
-
-            os.remove(audio_file)
-        except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ خطأ: {e}")
-
-    elif action == "video":
-        bot.send_message(call.message.chat.id, "⏳ جاري التحميل كفيديو...")
-        ydl_opts = {
-            'outtmpl': 'downloaded_video.%(ext)s',
-            'format': 'best',
-            'retries': 3,
-            'nocheckcertificate': True,
-        }
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                filename = ydl.prepare_filename(info)
-
-            with open(filename, "rb") as f:
-                bot.send_video(call.message.chat.id, f)
-
-            os.remove(filename)
-        except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ خطأ: {e}")
-
-    elif action == "info":
-        bot.send_message(call.message.chat.id, "🔍 جاري جلب المعلومات...")
-        try:
-            with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-                info = ydl.extract_info(url, download=False)
-            title = info.get("title", "غير معروف")
-            duration = info.get("duration", 0)
-            filesize = info.get("filesize", 0)
-            bot.send_message(
-                call.message.chat.id,
-                f"ℹ️ معلومات الفيديو:\n\n📌 العنوان: {title}\n⏱️ المدة: {duration} ثانية\n💾 الحجم: {filesize/1024/1024:.2f} MB"
+            stats_text = (
+                f"📊 **الإحصائيات**\n\n"
+                f"👥 عدد المستخدمين: {len(users)}\n"
+                f"📥 عدد التحميلات: {download_count}\n\n"
+                f"🔥 **أكثر 5 روابط:**\n\n"
+                f"{table_header}{table_rows}"
             )
-        except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ خطأ في جلب المعلومات: {e}")
+            bot.send_message(call.message.chat.id, stats_text, parse_mode="Markdown")
 
-if __name__ == "__main__":
-    print("Bot with audio/video/info choice + thumbnail is running...")
-    bot.infinity_polling()
+    # أزرار المستخدم العادي
+    else:
+        if call.data == "audio":
+            bot.send_message(call.message.chat.id, "⏳ جاري التحميل كصوت...")
+            download_count += 1
+            downloaded_links.append("رابط تجريبي صوت")
+        elif call.data == "video":
+            bot.send_message(call.message.chat.id, "⏳ جاري التحميل كفيديو...")
+            download_count += 1
+            downloaded_links.append("رابط تجريبي فيديو")
+        elif call.data == "info":
+            bot.send_message(call.message.chat.id, "ℹ️ معلومات الفيديو: العنوان - المدة - الحجم")
+
+# استقبال رسائل الأدمن لإضافة/حذف/بث
+@bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID)
+def admin_input(message):
+    text = message.text.strip()
+    if text.startswith("@"):
+        if text in required_channels:
+            required_channels.remove(text)
+            bot.send_message(message.chat.id, f"❌ تم حذف القناة: {text}")
+        else:
+            required_channels.append(text)
+            bot.send_message(message.chat.id, f"➕ تم إضافة القناة: {text}")
+    else:
+        # بث نص/صورة/فيديو
+        if message.text:
+            for user in users:
+                try:
+                    bot.send_message(user, f"📢 رسالة من الأدمن:\n\n{message.text}")
+                except:
+                    pass
+        if message.photo:
+            for user in users:
+                try:
+                    bot.send_photo(user, message.photo[-1].file_id, caption=message.caption or "")
+                except:
+                    pass
+        if message.video:
+            for user in users:
+                try:
+                    bot.send_video(user, message.video.file_id, caption=message.caption or "")
+                except:
+                    pass
+        bot.send_message(message.chat.id, "✅ تم إرسال الرسالة للجميع.")
+
+bot.infinity_polling()
