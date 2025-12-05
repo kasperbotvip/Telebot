@@ -3,3 +3,4 @@ gunicorn
 yt-dlp
 telebot
 social-media-downloader
+pyTelegramBotAPI
