@@ -1,26 +1,34 @@
 import telebot
-from youtube_downloader import download_media
-from social_manager import post_to_social
+from youtube_downloader import download_youtube
+from social_downloader import download_social
+import os
 
-BOT_TOKEN = "5788330295:AAHhDVCjGt6g2vBrCuyAKK5Zjj3o73s7yTg"
+BOT_TOKEN = "ضع_التوكن_هنا"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 pending_links = {}
-pending_files = {}
 
 @bot.message_handler(commands=['start'])
 def welcome(message):
-    bot.send_message(message.chat.id, "👋 أرسل رابط يوتيوب أو أي موقع مدعوم، وبعدها اختر نوع التحميل.")
+    bot.send_message(message.chat.id, "👋 أرسل رابط مباشر (يوتيوب أو أي موقع سوشيال ميديا مدعوم).")
 
 @bot.message_handler(func=lambda m: m.text and m.text.startswith("http"))
 def handle_link(message):
-    pending_links[message.from_user.id] = message.text.strip()
-    markup = telebot.types.InlineKeyboardMarkup()
-    markup.add(telebot.types.InlineKeyboardButton("🎬 فيديو", callback_data="video"))
-    markup.add(telebot.types.InlineKeyboardButton("🎶 صوت", callback_data="audio"))
-    bot.send_message(message.chat.id, "📥 اختر نوع التحميل:", reply_markup=markup)
+    url = message.text.strip()
+    pending_links[message.from_user.id] = url
 
-@bot.callback_query_handler(func=lambda call: call.data in ["video", "audio"])
+    # تحديد نوع الرابط (يوتيوب أو سوشيال)
+    if "youtube.com" in url or "youtu.be" in url:
+        source = "youtube"
+    else:
+        source = "social"
+
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(telebot.types.InlineKeyboardButton("🎬 فيديو", callback_data=f"{source}_video"))
+    markup.add(telebot.types.InlineKeyboardButton("🎶 صوت", callback_data=f"{source}_audio"))
+    bot.send_message(message.chat.id, f"📥 اختر نوع التحميل ({source}):", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.endswith(("video","audio")))
 def process_download(call):
     url = pending_links.get(call.from_user.id)
     if not url:
@@ -29,36 +37,23 @@ def process_download(call):
 
     bot.send_message(call.message.chat.id, "⏳ جاري التحميل...")
     try:
-        file_path = download_media(url, call.data)
-        pending_files[call.from_user.id] = file_path
+        source, mode = call.data.split("_")
 
-        markup = telebot.types.InlineKeyboardMarkup()
-        for p in ["instagram", "facebook", "twitter", "tiktok", "youtube", "telegram"]:
-            markup.add(telebot.types.InlineKeyboardButton(p.capitalize(), callback_data=f"post_{p}"))
-        bot.send_message(call.message.chat.id, "🌐 اختر المنصة للنشر:", reply_markup=markup)
+        if source == "youtube":
+            file_path = download_youtube(url, mode)
+        else:
+            file_path = download_social(url, mode)
+
+        if mode == "video":
+            with open(file_path, "rb") as f:
+                bot.send_video(call.message.chat.id, f)
+        else:
+            with open(file_path, "rb") as f:
+                bot.send_audio(call.message.chat.id, f)
+
+        del pending_links[call.from_user.id]
 
     except Exception as e:
-        err = str(e)
-
-        # رسالة مفهومة إذا المشكلة تحقق-دخول يوتيوب
-        if "Sign in to confirm you’re not a bot" in err or "Sign in to confirm" in err:
-            bot.send_message(
-                call.message.chat.id,
-                "⚠️ يوتيوب يطلب تسجيل دخول لهذا الرابط. رجاءً تأكد من وجود ملف cookies.txt صالح ومحدّث بجانب التطبيق."
-            )
-        else:
-            bot.send_message(call.message.chat.id, f"❌ خطأ في التحميل:\n{err}")
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("post_"))
-def process_post(call):
-    platform = call.data.replace("post_", "")
-    file_path = pending_files.get(call.from_user.id)
-    if not file_path:
-        bot.send_message(call.message.chat.id, "❌ لا يوجد ملف جاهز.")
-        return
-
-    result = post_to_social(file_path, platform)
-    bot.send_message(call.message.chat.id, result)
-    del pending_files[call.from_user.id]
+        bot.send_message(call.message.chat.id, f"❌ خطأ في التحميل:\n{e}")
 
 bot.infinity_polling()
