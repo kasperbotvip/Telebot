@@ -2,7 +2,7 @@ import telebot
 import yt_dlp
 import os
 
-BOT_TOKEN = "ضع_التوكن_هنا"
+BOT_TOKEN = "5788330295:AAHhDVCjGt6g2vBrCuyAKK5Zjj3o73s7yTg"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 pending_links = {}
