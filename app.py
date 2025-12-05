@@ -10,7 +10,7 @@ pending_files = {}
 
 @bot.message_handler(commands=['start'])
 def welcome(message):
-    bot.send_message(message.chat.id, "👋 أهلاً! أرسل رابط يوتيوب أو أي موقع مدعوم.")
+    bot.send_message(message.chat.id, "👋 أرسل رابط يوتيوب أو أي موقع مدعوم، وبعدها اختر نوع التحميل.")
 
 @bot.message_handler(func=lambda m: m.text and m.text.startswith("http"))
 def handle_link(message):
@@ -32,14 +32,22 @@ def process_download(call):
         file_path = download_media(url, call.data)
         pending_files[call.from_user.id] = file_path
 
-        # ✅ بعد التحميل، عرض خيارات النشر
         markup = telebot.types.InlineKeyboardMarkup()
         for p in ["instagram", "facebook", "twitter", "tiktok", "youtube", "telegram"]:
             markup.add(telebot.types.InlineKeyboardButton(p.capitalize(), callback_data=f"post_{p}"))
         bot.send_message(call.message.chat.id, "🌐 اختر المنصة للنشر:", reply_markup=markup)
 
     except Exception as e:
-        bot.send_message(call.message.chat.id, f"❌ خطأ في التحميل:\n{e}")
+        err = str(e)
+
+        # رسالة مفهومة إذا المشكلة تحقق-دخول يوتيوب
+        if "Sign in to confirm you’re not a bot" in err or "Sign in to confirm" in err:
+            bot.send_message(
+                call.message.chat.id,
+                "⚠️ يوتيوب يطلب تسجيل دخول لهذا الرابط. رجاءً تأكد من وجود ملف cookies.txt صالح ومحدّث بجانب التطبيق."
+            )
+        else:
+            bot.send_message(call.message.chat.id, f"❌ خطأ في التحميل:\n{err}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("post_"))
 def process_post(call):
