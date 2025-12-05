@@ -12,7 +12,6 @@ bot = telebot.TeleBot(BOT_TOKEN)
 users = set()
 download_count = 0
 downloaded_links = []
-required_channels = ["@day3_00"]  # القنوات المطلوبة للاشتراك
 
 # ✅ دالة تحميل من يوتيوب باستخدام yt-dlp
 def download_youtube(url, output="downloaded.mp4"):
@@ -26,26 +25,10 @@ def download_youtube(url, output="downloaded.mp4"):
         ydl.download([url])
     return output
 
-# تحقق من الاشتراك
-def check_subscription(user_id):
-    for channel in required_channels:
-        try:
-            member = bot.get_chat_member(channel, user_id)
-            if member.status in ["member", "administrator", "creator"]:
-                continue
-            else:
-                return False
-        except:
-            return False
-    return True
-
 # أول رسالة عند دخول أي مستخدم
 @bot.message_handler(commands=['start'])
 def welcome(message):
     users.add(message.from_user.id)
-    if not check_subscription(message.from_user.id):
-        bot.send_message(message.chat.id, "⚠️ لازم تشترك بالقناة أولاً:\n" + "\n".join(required_channels))
-        return
 
     if message.from_user.id == ADMIN_ID:
         # لوحة الأدمن تظهر مباشرة
@@ -53,7 +36,6 @@ def welcome(message):
         markup.add(telebot.types.InlineKeyboardButton("➕ إضافة قناة", callback_data="add_channel"))
         markup.add(telebot.types.InlineKeyboardButton("❌ حذف قناة", callback_data="del_channel"))
         markup.add(telebot.types.InlineKeyboardButton("📋 عرض القنوات", callback_data="list_channels"))
-        markup.add(telebot.types.InlineKeyboardButton("📤 رسالة جماعية", callback_data="broadcast"))
         markup.add(telebot.types.InlineKeyboardButton("📊 عرض الإحصائيات", callback_data="stats"))
         markup.add(telebot.types.InlineKeyboardButton("🔄 تحديث الإحصائيات", callback_data="refresh_stats"))
         bot.send_message(message.chat.id, "📋 لوحة الأدمن:", reply_markup=markup)
@@ -77,9 +59,7 @@ def button_handler(call):
         elif call.data == "del_channel":
             bot.send_message(call.message.chat.id, "✏️ أرسل اسم القناة لحذفها")
         elif call.data == "list_channels":
-            bot.send_message(call.message.chat.id, "📋 القنوات المطلوبة:\n" + "\n".join(required_channels))
-        elif call.data == "broadcast":
-            bot.send_message(call.message.chat.id, "✏️ أرسل الرسالة الجماعية (نص/صورة/فيديو)")
+            bot.send_message(call.message.chat.id, "📋 القنوات المطلوبة: (ميزة شكلية فقط حالياً)")
         elif call.data in ["stats", "refresh_stats"]:
             top_links = Counter(downloaded_links).most_common(5)
             table_header = "| الترتيب | الرابط | مرات التحميل |\n|---------|--------|---------------|\n"
@@ -121,38 +101,5 @@ def button_handler(call):
                 bot.send_message(call.message.chat.id, f"❌ خطأ في التحميل: {e}")
         elif call.data == "info":
             bot.send_message(call.message.chat.id, "ℹ️ معلومات الفيديو: العنوان - المدة - الحجم")
-
-# استقبال رسائل الأدمن لإضافة/حذف/بث
-@bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID)
-def admin_input(message):
-    text = message.text.strip()
-    if text.startswith("@"):
-        if text in required_channels:
-            required_channels.remove(text)
-            bot.send_message(message.chat.id, f"❌ تم حذف القناة: {text}")
-        else:
-            required_channels.append(text)
-            bot.send_message(message.chat.id, f"➕ تم إضافة القناة: {text}")
-    else:
-        # بث نص/صورة/فيديو
-        if message.text:
-            for user in users:
-                try:
-                    bot.send_message(user, f"📢 رسالة من الأدمن:\n\n{message.text}")
-                except:
-                    pass
-        if message.photo:
-            for user in users:
-                try:
-                    bot.send_photo(user, message.photo[-1].file_id, caption=message.caption or "")
-                except:
-                    pass
-        if message.video:
-            for user in users:
-                try:
-                    bot.send_video(user, message.video.file_id, caption=message.caption or "")
-                except:
-                    pass
-        bot.send_message(message.chat.id, "✅ تم إرسال الرسالة للجميع.")
 
 bot.infinity_polling()
