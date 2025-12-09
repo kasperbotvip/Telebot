@@ -1,6 +1,2 @@
-pyTelegramBotAPI
-gunicorn
-yt-dlp
-telebot
-social-media-downloader
-pyTelegramBotAPI
+python-telegram-bot==21.4
+pytube
